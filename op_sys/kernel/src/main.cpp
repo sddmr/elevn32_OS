@@ -1,11 +1,12 @@
 #include <stdint.h>
 #include <stddef.h>
-#include "limine.h"
+#include <limine.h>
 #include "framebuffer.h"
-#include "string.h"
+#include "graphics.h"
 #include "gdt.h"
 #include "idt.h"
 #include "isr.h"
+#include "pmm.h"
 #include "heap.h"
 #include "timer.h"
 #include "keyboard.h"
@@ -18,89 +19,67 @@
 __attribute__((used, section(".limine_requests_start")))
 static volatile LIMINE_REQUESTS_START_MARKER;
 
-__attribute__((used, section(".limine_requests")))
+__attribute__((used, section(".limine_requests_end")))
+static volatile LIMINE_REQUESTS_END_MARKER;
+
 static volatile LIMINE_BASE_REVISION(3);
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
-    .revision = 0,
-    .response = nullptr
+    .revision = 0
 };
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST,
-    .revision = 0,
-    .response = nullptr
+    .revision = 0
 };
 
-__attribute__((used, section(".limine_requests_end")))
-static volatile LIMINE_REQUESTS_END_MARKER;
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST,
+    .revision = 0
+};
 
-extern "C" {
-    extern void (*__init_array_start[])();
-    extern void (*__init_array_end[])();
-}
+static uint8_t kernel_heap[1024 * 1024 * 4]; // 4MB heap
 
-static void call_constructors() {
-    for (void (**ctor)() = __init_array_start; ctor < __init_array_end; ctor++) {
-        (*ctor)();
-    }
-}
-
-static void halt() {
+extern "C" void halt() {
     for (;;) {
         asm volatile("hlt");
     }
 }
 
-static uint8_t kernel_heap[65536];
+void uint_to_str(uint64_t n, char* str) {
+    if (n == 0) {
+        str[0] = '0';
+        str[1] = '\0';
+        return;
+    }
+    int i = 0;
+    while (n > 0) {
+        str[i++] = (n % 10) + '0';
+        n /= 10;
+    }
+    str[i] = '\0';
+    for (int j = 0; j < i / 2; j++) {
+        char tmp = str[j];
+        str[j] = str[i - j - 1];
+        str[i - j - 1] = tmp;
+    }
+}
 
-static uint64_t total_ram = 0;
+extern "C" void kernel_start(void) {
+    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) {
+        halt();
+    }
 
-extern "C" void kernel_start() {
-    call_constructors();
-    serial::init();
-    serial::println("=== elevn32 kernel start ===");
-
-    if (LIMINE_BASE_REVISION_SUPPORTED == false) halt();
-
-    if (framebuffer_request.response == nullptr ||
-        framebuffer_request.response->framebuffer_count < 1) halt();
-
-    struct limine_framebuffer *lfb = framebuffer_request.response->framebuffers[0];
-
-    fb::init(
-        (uint32_t *)lfb->address,
-        lfb->width,
-        lfb->height,
-        lfb->pitch
-    );
-
+    struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
+    fb::init((uint32_t*)fb->address, fb->width, fb->height, fb->pitch);
     fb::clear(0x000000);
 
-    fb::set_color(0x00FF88, 0x000000);
-    fb::println("");
-    fb::println("  elevn32 v0.3");
-    fb::println("");
-
-    fb::set_color(0x00DDFF, 0x000000);
-
-    char buf[64];
-    fb::print("  [INFO] ");
-    fb::set_color(0xFFFFFF, 0x000000);
-    fb::print("Display: ");
-    fb::set_color(0xFFFFFF, 0x000000);
-    uint_to_str(lfb->width, buf);
-    fb::print(buf);
-    fb::print("x");
-    uint_to_str(lfb->height, buf);
-    fb::print(buf);
-    fb::print(" @ ");
-    uint_to_str(lfb->bpp, buf);
-    fb::print(buf);
-    fb::println("bpp");
+    serial::init();
+    serial::print("Elevn32 OS Kernel Starting...\n");
 
     gdt::init();
     fb::set_color(0x00FF88, 0x000000);
@@ -114,6 +93,8 @@ extern "C" void kernel_start() {
     fb::set_color(0xFFFFFF, 0x000000);
     fb::println("IDT + PIC initialized");
 
+    uint64_t total_ram = 0;
+    char buf[32];
     if (memmap_request.response) {
         for (uint64_t i = 0; i < memmap_request.response->entry_count; i++) {
             struct limine_memmap_entry *e = memmap_request.response->entries[i];
@@ -158,11 +139,8 @@ extern "C" void kernel_start() {
     fb::println("");
 
     asm volatile("sti");
-    
-    // Slight pause to let the user see the boot sequence
     timer::sleep(1000);
 
-    // Play boot animation
     boot::play_animation();
 
     wm::init();

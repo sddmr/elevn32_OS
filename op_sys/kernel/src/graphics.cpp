@@ -3,18 +3,21 @@
 
 namespace graphics {
 
-uint32_t current_desktop_color = 0x28282D;
+uint32_t current_desktop_color = 0x008080; // Classic teal
+uint32_t COL_GRAY      = 0xC0C0C0;
+uint32_t COL_WHITE     = 0xFFFFFF;
+uint32_t COL_BLACK     = 0x000000;
+uint32_t COL_DARK      = 0x808080;
+uint32_t COL_DARKEST   = 0x404040;
+uint32_t COL_TITLEBAR  = 0x000080;
+uint32_t COL_TITLE_IA  = 0x808080;
 
 void draw_line_h(uint64_t x, uint64_t y, uint64_t w, uint32_t color) {
-    for (uint64_t i = 0; i < w; i++) {
-        fb::put_pixel(x + i, y, color);
-    }
+    for (uint64_t i = 0; i < w; i++) fb::put_pixel(x + i, y, color);
 }
 
 void draw_line_v(uint64_t x, uint64_t y, uint64_t h, uint32_t color) {
-    for (uint64_t i = 0; i < h; i++) {
-        fb::put_pixel(x, y + i, color);
-    }
+    for (uint64_t i = 0; i < h; i++) fb::put_pixel(x, y + i, color);
 }
 
 void draw_rect(uint64_t x, uint64_t y, uint64_t w, uint64_t h, uint32_t color) {
@@ -24,26 +27,24 @@ void draw_rect(uint64_t x, uint64_t y, uint64_t w, uint64_t h, uint32_t color) {
     draw_line_v(x + w - 1, y, h, color);
 }
 
-void draw_win95_border(uint64_t x, uint64_t y, uint64_t w, uint64_t h, bool sunken) {
-    uint32_t top_left = sunken ? COLOR_WIN_DARK : COLOR_WIN_LIGHT;
-    uint32_t bottom_right = sunken ? COLOR_WIN_LIGHT : COLOR_WIN_DARK;
-    uint32_t outer_tl = sunken ? 0x000000 : COLOR_WIN_LIGHT;
-    uint32_t outer_br = sunken ? COLOR_WIN_LIGHT : 0x000000;
-
-    // Inner highlight/shadow
-    draw_line_h(x + 1, y + 1, w - 2, top_left);
-    draw_line_v(x + 1, y + 1, h - 2, top_left);
-    draw_line_h(x + 1, y + h - 2, w - 2, bottom_right);
-    draw_line_v(x + w - 2, y + 1, h - 2, bottom_right);
-
-    // Outer highlight/shadow
-    draw_line_h(x, y, w, outer_tl);
-    draw_line_v(x, y, h, outer_tl);
-    draw_line_h(x, y + h - 1, w, outer_br);
-    draw_line_v(x + w - 1, y, h, outer_br);
+void draw_raised(int x, int y, int w, int h) {
+    draw_line_h(x, y, w, COL_WHITE);
+    draw_line_v(x, y, h, COL_WHITE);
+    draw_line_h(x + 1, y + h - 2, w - 2, COL_DARK);
+    draw_line_v(x + w - 2, y + 1, h - 2, COL_DARK);
+    draw_line_h(x, y + h - 1, w, COL_DARKEST);
+    draw_line_v(x + w - 1, y, h, COL_DARKEST);
 }
 
-// A simple classic arrow cursor bitmap
+void draw_sunken(int x, int y, int w, int h) {
+    draw_line_h(x, y, w, COL_DARK);
+    draw_line_v(x, y, h, COL_DARK);
+    draw_line_h(x + 1, y + h - 2, w - 2, COL_WHITE);
+    draw_line_v(x + w - 2, y + 1, h - 2, COL_WHITE);
+    draw_line_h(x, y + h - 1, w, COL_WHITE);
+    draw_line_v(x + w - 1, y, h, COL_WHITE);
+}
+
 static const char *cursor_bitmap[] = {
     "100000000000",
     "110000000000",
@@ -69,11 +70,8 @@ void draw_cursor(uint64_t x, uint64_t y) {
     for (int r = 0; r < 18; r++) {
         for (int c = 0; c < 12; c++) {
             char pixel = cursor_bitmap[r][c];
-            if (pixel == '1') {
-                fb::put_pixel(x + c, y + r, 0xFFFFFF); // White border
-            } else if (pixel == '2') {
-                fb::put_pixel(x + c, y + r, 0x000000); // Black fill
-            }
+            if (pixel == '1') fb::put_pixel(x + c, y + r, 0xFFFFFF);
+            else if (pixel == '2') fb::put_pixel(x + c, y + r, 0x000000);
         }
     }
 }

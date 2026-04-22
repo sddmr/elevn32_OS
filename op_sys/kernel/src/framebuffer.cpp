@@ -60,6 +60,11 @@ void put_pixel(uint64_t x, uint64_t y, uint32_t color) {
     backbuffer[y * screen.width + x] = color;
 }
 
+uint32_t get_pixel_raw(uint64_t x, uint64_t y) {
+    if (x >= screen.width || y >= screen.height) return 0;
+    return backbuffer[y * screen.width + x];
+}
+
 void fill_rect(uint64_t x, uint64_t y, uint64_t w, uint64_t h, uint32_t color) {
     for (uint64_t dy = 0; dy < h; dy++) {
         for (uint64_t dx = 0; dx < w; dx++) {
@@ -95,7 +100,6 @@ void draw_string(uint64_t x, uint64_t y, const char *str, uint32_t fg, uint32_t 
         x += font::CHAR_WIDTH;
         str++;
     }
-    swap_buffers();
 }
 
 void clear(uint32_t color) {

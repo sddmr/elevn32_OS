@@ -15,4 +15,5 @@ namespace fb {
     void swap_buffers();
     void swap_buffers_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
     void draw_image(uint64_t x, uint64_t y, uint64_t w, uint64_t h, const uint32_t* pixels);
+    uint32_t get_pixel_raw(uint64_t x, uint64_t y);
 }

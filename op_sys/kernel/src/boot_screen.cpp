@@ -50,12 +50,12 @@ void play_animation() {
     int bar_x = (1280 - bar_w) / 2;
     int bar_y = text_y + 30;
 
-    graphics::draw_rect(bar_x, bar_y, bar_w, bar_h, graphics::COLOR_WIN_DARK); // Black border
+    graphics::draw_rect(bar_x, bar_y, bar_w, bar_h, graphics::COL_BLACK); // Black border
     fb::swap_buffers();
     
     // Fill progress bar smoothly
     for (int p = 0; p < bar_w - 2; p++) {
-        graphics::draw_line_v(bar_x + 1 + p, bar_y + 1, bar_h - 2, graphics::COLOR_ACCENT); // Fill with lighter mint green
+        graphics::draw_line_v(bar_x + 1 + p, bar_y + 1, bar_h - 2, 0x00B871); // Green accent
         if (p % 3 == 0) {
             fb::swap_buffers();
             timer::sleep(5);
