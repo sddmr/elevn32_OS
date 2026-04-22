@@ -3,9 +3,12 @@
 
 elevn32 OS
 
-Current Version: v0.4.0
+Current Version: v1.0.0
 
 elevn32 OS is a 64-bit, bare-metal operating system written from scratch using C++ and x86_64 Assembly. The main goal of this project is to deeply understand low-level system design, hardware interaction, and operating system fundamentals by building everything without relying on existing operating systems or high-level frameworks.
+
+**Username: Root  
+**Pass: 123
 
 ⸻
 
