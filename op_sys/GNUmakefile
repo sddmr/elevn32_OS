@@ -45,14 +45,14 @@ all: kernel/src/limine.h kernel/kernel.elf limine/limine
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o sdmros.iso
+		iso_root -o elevn32.iso
 
 	# Limine BIOS boot sektörlerini kur
-	./limine/limine bios-install sdmros.iso
+	./limine/limine bios-install elevn32.iso
 
 	@echo ""
 	@echo "═══════════════════════════════════════"
-	@echo "  SdmrOS ISO olusturuldu: sdmros.iso"
+	@echo "  SdmrOS ISO olusturuldu: elevn32.iso"
 	@echo "  Calistirmak icin: gmake run"
 	@echo "═══════════════════════════════════════"
 
@@ -61,7 +61,7 @@ run: all
 	qemu-system-x86_64 \
 		-M q35 \
 		-m 128M \
-		-cdrom sdmros.iso \
+	-cdrom elevn32.iso \
 		-serial stdio \
 		-no-reboot \
 		-no-shutdown
@@ -69,4 +69,4 @@ run: all
 # Temizle
 clean:
 	$(GMAKE) -C kernel clean
-	rm -rf iso_root sdmros.iso
+	rm -rf iso_root elevn32.iso

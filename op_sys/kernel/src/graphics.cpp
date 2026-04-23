@@ -3,14 +3,16 @@
 
 namespace graphics {
 
-uint32_t current_desktop_color = 0x008080; // Classic teal
+uint32_t current_desktop_color = 0x2A1B38; // Main background purple
 uint32_t COL_GRAY      = 0xC0C0C0;
 uint32_t COL_WHITE     = 0xFFFFFF;
 uint32_t COL_BLACK     = 0x000000;
 uint32_t COL_DARK      = 0x808080;
 uint32_t COL_DARKEST   = 0x404040;
-uint32_t COL_TITLEBAR  = 0x000080;
+uint32_t COL_TITLEBAR  = 0x2A1B38; // Active window titlebar purple
 uint32_t COL_TITLE_IA  = 0x808080;
+
+bool is_dark_theme = false;
 
 void draw_line_h(uint64_t x, uint64_t y, uint64_t w, uint32_t color) {
     for (uint64_t i = 0; i < w; i++) fb::put_pixel(x + i, y, color);

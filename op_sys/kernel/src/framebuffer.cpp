@@ -21,8 +21,8 @@ static uint32_t current_bg = 0x000000;
 
 void init(uint32_t *addr, uint64_t w, uint64_t h, uint64_t pitch) {
     screen.address = addr;
-    screen.width = w;
-    screen.height = h;
+    screen.width = (w > 1280) ? 1280 : w;
+    screen.height = (h > 800) ? 800 : h;
     screen.pitch = pitch;
     cursor_x = 0;
     cursor_y = 0;
@@ -66,10 +66,13 @@ uint32_t get_pixel_raw(uint64_t x, uint64_t y) {
 }
 
 void fill_rect(uint64_t x, uint64_t y, uint64_t w, uint64_t h, uint32_t color) {
+    if (x >= screen.width || y >= screen.height) return;
+    if (x + w > screen.width)  w = screen.width  - x;
+    if (y + h > screen.height) h = screen.height - y;
     for (uint64_t dy = 0; dy < h; dy++) {
-        for (uint64_t dx = 0; dx < w; dx++) {
-            put_pixel(x + dx, y + dy, color);
-        }
+        uint32_t *row = &backbuffer[(y + dy) * screen.width + x];
+        uint32_t  cnt = (uint32_t)w;
+        asm volatile("rep stosl" : "+D"(row), "+c"(cnt) : "a"(color) : "memory");
     }
 }
 
