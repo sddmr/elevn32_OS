@@ -5,7 +5,7 @@
 
 namespace heap {
 
-void init(uint64_t start, uint64_t size);
+void init();
 void *kmalloc(size_t size);
 void kfree(void *ptr);
 uint64_t get_used();

@@ -74,23 +74,50 @@ void init(void *memmap_resp, uint64_t hhdm) {
 }
 
 void *alloc_page() {
+    return alloc_pages(1);
+}
+
+void *alloc_pages(size_t count) {
+    if (count == 0) return nullptr;
+    
+    size_t run_length = 0;
+    uint64_t start_idx = 0;
+    
     for (uint64_t i = 0; i < total_pages; i++) {
         if (!bitmap_test(i)) {
-            bitmap_set(i);
-            used_pages++;
-            void *page = (void *)(i * PAGE_SIZE + hhdm_offset);
-            memset(page, 0, PAGE_SIZE);
-            return page;
+            if (run_length == 0) start_idx = i;
+            run_length++;
+            
+            if (run_length == count) {
+                for (size_t j = 0; j < count; j++) {
+                    bitmap_set(start_idx + j);
+                    used_pages++;
+                }
+                void *pages = (void *)(start_idx * PAGE_SIZE + hhdm_offset);
+                memset(pages, 0, count * PAGE_SIZE);
+                return pages;
+            }
+        } else {
+            run_length = 0;
         }
     }
     return nullptr;
 }
 
 void free_page(void *addr) {
-    uint64_t page = ((uint64_t)addr - hhdm_offset) / PAGE_SIZE;
-    if (page < total_pages && bitmap_test(page)) {
-        bitmap_clear(page);
-        used_pages--;
+    free_pages(addr, 1);
+}
+
+void free_pages(void *addr, size_t count) {
+    if (!addr) return;
+    uint64_t start_page = ((uint64_t)addr - hhdm_offset) / PAGE_SIZE;
+    
+    for (size_t i = 0; i < count; i++) {
+        uint64_t page = start_page + i;
+        if (page < total_pages && bitmap_test(page)) {
+            bitmap_clear(page);
+            used_pages--;
+        }
     }
 }
 

@@ -9,7 +9,7 @@ struct InterruptFrame {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
-typedef void (*isr_handler_t)(InterruptFrame *frame);
+typedef uint64_t (*isr_handler_t)(InterruptFrame *frame);
 
 namespace isr {
     void init();

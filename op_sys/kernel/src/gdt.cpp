@@ -23,8 +23,8 @@ void init() {
     set_entry(0, 0, 0, 0, 0);
     set_entry(1, 0, 0xFFFFF, 0x9A, 0xA0);
     set_entry(2, 0, 0xFFFFF, 0x92, 0xC0);
-    set_entry(3, 0, 0xFFFFF, 0xFA, 0xA0);
-    set_entry(4, 0, 0xFFFFF, 0xF2, 0xC0);
+    set_entry(3, 0, 0xFFFFF, 0xF2, 0xC0); // User Data (0x18)
+    set_entry(4, 0, 0xFFFFF, 0xFA, 0xA0); // User Code (0x20)
 
     gdt_flush((uint64_t)&pointer);
 }

@@ -111,6 +111,8 @@ isr_common_stub:
     mov rdi, rsp
     call isr_handler
 
+    mov rsp, rax ; isr_handler returns the new stack pointer!
+
     pop r15
     pop r14
     pop r13

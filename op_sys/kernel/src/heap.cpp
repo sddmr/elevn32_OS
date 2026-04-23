@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "string.h"
+#include "pmm.h"
 
 namespace heap {
 
@@ -17,15 +18,39 @@ static uint64_t heap_used = 0;
 static const size_t BLOCK_SIZE = sizeof(Block);
 static const size_t MIN_ALLOC = 16;
 
-void init(uint64_t start, uint64_t size) {
-    heap_start = start;
-    heap_size = size;
-    heap_used = 0;
+static Block *expand_heap(size_t size) {
+    size_t pages = (size + BLOCK_SIZE + 4095) / 4096;
+    if (pages < 16) pages = 16; // Minimum expansion is 16 pages (64KB)
+    
+    void *new_mem = pmm::alloc_pages(pages);
+    if (!new_mem) return nullptr;
+    
+    size_t allocated_size = pages * 4096;
+    heap_size += allocated_size;
+    
+    Block *new_block = (Block *)new_mem;
+    new_block->size = allocated_size - BLOCK_SIZE;
+    new_block->free = true;
+    new_block->next = nullptr;
+    
+    if (!head) {
+        head = new_block;
+    } else {
+        Block *current = head;
+        while (current->next) current = current->next;
+        current->next = new_block;
+    }
+    
+    return new_block;
+}
 
-    head = (Block *)start;
-    head->size = size - BLOCK_SIZE;
-    head->free = true;
-    head->next = nullptr;
+void init() {
+    heap_start = 0;
+    heap_size = 0;
+    heap_used = 0;
+    head = nullptr;
+    
+    expand_heap(1024 * 1024 * 4); // Initial 4MB
 }
 
 static Block *find_free(size_t size) {
@@ -56,7 +81,10 @@ void *kmalloc(size_t size) {
     size = (size + 15) & ~15;
 
     Block *block = find_free(size);
-    if (!block) return nullptr;
+    if (!block) {
+        block = expand_heap(size);
+        if (!block) return nullptr;
+    }
 
     split(block, size);
     block->free = false;

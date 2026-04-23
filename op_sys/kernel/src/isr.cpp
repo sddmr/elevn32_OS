@@ -33,7 +33,7 @@ static const char *exception_messages[] = {
     "Control Protection",
 };
 
-extern "C" void isr_handler(InterruptFrame *frame) {
+extern "C" uint64_t isr_handler(InterruptFrame *frame) {
     if (frame->int_no < 32) {
         fb::set_color(0xFF4444, 0x000000);
         fb::println("");
@@ -53,8 +53,10 @@ extern "C" void isr_handler(InterruptFrame *frame) {
         for(;;) asm volatile("hlt");
     }
 
+    uint64_t new_rsp = (uint64_t)frame;
+
     if (handlers[frame->int_no]) {
-        handlers[frame->int_no](frame);
+        new_rsp = handlers[frame->int_no](frame);
     }
 
     if (frame->int_no >= 32 && frame->int_no < 48) {
@@ -63,6 +65,8 @@ extern "C" void isr_handler(InterruptFrame *frame) {
         }
         outb(0x20, 0x20);
     }
+    
+    return new_rsp;
 }
 
 void register_handler(uint8_t n, isr_handler_t handler) {

@@ -29,19 +29,19 @@ static volatile int buf_head = 0;
 static volatile int buf_tail = 0;
 static bool shift_pressed = false;
 
-static void callback(InterruptFrame *) {
+static uint64_t callback(InterruptFrame *frame) {
     uint8_t scancode = inb(0x60);
 
     if (scancode == 0x2A || scancode == 0x36) {
         shift_pressed = true;
-        return;
+        return (uint64_t)frame;
     }
     if (scancode == 0xAA || scancode == 0xB6) {
         shift_pressed = false;
-        return;
+        return (uint64_t)frame;
     }
 
-    if (scancode & 0x80) return;
+    if (scancode & 0x80) return (uint64_t)frame;
 
     if (scancode < sizeof(scancode_ascii)) {
         char c = shift_pressed ? scancode_shift[scancode] : scancode_ascii[scancode];
@@ -53,6 +53,7 @@ static void callback(InterruptFrame *) {
             }
         }
     }
+    return (uint64_t)frame;
 }
 
 void init() {

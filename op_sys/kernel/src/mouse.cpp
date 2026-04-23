@@ -38,7 +38,7 @@ static uint8_t mouse_read() {
     return inb(0x60);
 }
 
-static void callback(InterruptFrame *) {
+static uint64_t callback(InterruptFrame *frame) {
     uint8_t data = inb(0x60);
     mouse_byte[mouse_cycle++] = data;
 
@@ -46,7 +46,7 @@ static void callback(InterruptFrame *) {
         // Bit 3 of the first byte must be 1. If not, we are out of sync.
         if (!(data & 0x08)) {
             mouse_cycle = 0;
-            return;
+            return (uint64_t)frame;
         }
     }
 
@@ -75,6 +75,7 @@ static void callback(InterruptFrame *) {
         right_clicked = state & (1 << 1);
         middle_clicked = state & (1 << 2);
     }
+    return (uint64_t)frame;
 }
 
 void init() {

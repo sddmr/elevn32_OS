@@ -1,14 +1,16 @@
 #include "timer.h"
 #include "isr.h"
 #include "io.h"
+#include "sched.h"
 
 namespace timer {
 
 static uint64_t tick_count = 0;
 static uint32_t freq = 0;
 
-static void callback(InterruptFrame *) {
+static uint64_t callback(InterruptFrame *frame) {
     tick_count = tick_count + 1;
+    return sched::schedule((uint64_t)frame);
 }
 
 void init(uint32_t frequency) {
