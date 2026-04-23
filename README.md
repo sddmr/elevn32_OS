@@ -12,6 +12,23 @@ elevn32 OS is a 64-bit, bare-metal operating system written from scratch using C
 
 ⸻
 
+Latest Update
+
+This update introduces a major kernel-side foundation upgrade focused on memory management and execution flow. The kernel now includes a basic virtual memory manager, a simple round-robin scheduler, and early user-mode syscall support, making the internal architecture more modular and closer to a real multitasking operating system.
+
+Release Notes
+
+* Added Virtual Memory Management (VMM) support and kernel page table initialization
+* Expanded Physical Memory Management (PMM) with multi-page allocation and freeing
+* Reworked the kernel heap to grow dynamically through the physical memory manager
+* Added a basic round-robin scheduler and kernel thread creation flow
+* Introduced syscall setup for Ring 3 / user-mode execution
+* Added early user-space test execution to validate privilege switching and syscall handling
+* Updated interrupt-related code paths to support the new execution model
+* Refactored core kernel startup to initialize PMM, VMM, heap, scheduler, and syscall systems in sequence
+
+⸻
+
 Overview
 
 This project focuses on building a minimal yet functional operating system starting from the boot process up to a basic graphical user interface. Every component is implemented manually, including memory management, interrupt handling, hardware drivers, and a custom window manager.
@@ -102,4 +119,3 @@ Contributing
 Contributions, suggestions, and discussions are welcome.
 
 ⸻
-
