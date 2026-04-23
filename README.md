@@ -1,89 +1,118 @@
 # elevn32 OS
 
-**Current Version:** `v1.0.0`
+**Current Version:** `v1.1.1`
 
-elevn32 OS is a 64-bit bare-metal operating system written from scratch in C++ and x86_64 Assembly. The project is built as a hands-on exploration of low-level system architecture, hardware interaction, and core operating system design without relying on existing OS frameworks.
+elevn32 OS is a 64-bit bare-metal operating system written from scratch in C++ and x86_64 Assembly. It is built as a practical exploration of low-level architecture, memory management, hardware interaction, and desktop environment design without relying on an existing operating system stack.
+
+## Highlights
+
+- Custom x86_64 kernel with manual low-level subsystem development
+- Limine-based boot flow and ISO image generation
+- Physical and virtual memory groundwork for more advanced kernel features
+- Custom framebuffer-based desktop environment and window manager
+- Built-in desktop apps including Terminal, Calculator, Paint, Clock, Notepad, Snake, Minesweeper, System Info, Files, and Settings
+- Interactive shell support both in the boot console and inside the desktop terminal window
+- Theme-aware desktop styling with configurable colors and dark-mode support
 
 ## Default Login
 
-- **Username:** `Root`
+- **Username:** `root`
 - **Password:** `123`
 
 ## Overview
 
-The goal of elevn32 OS is to build a minimal but functional operating system from the ground up, starting at the boot process and extending into a basic graphical desktop environment. Core subsystems such as memory management, interrupt handling, hardware drivers, and window management are implemented manually to better understand how modern systems work internally.
+The project aims to build a compact but functional operating system from the boot stage up to a graphical desktop experience. Core pieces such as memory handling, interrupt management, PS/2 input drivers, rendering, shell behavior, and window management are implemented manually to better understand how a real operating system is structured internally.
 
-The system runs in a virtualized environment with QEMU and is built using a custom cross-compilation toolchain.
+The current system is designed to run inside QEMU and is built with a dedicated cross-compilation toolchain.
 
 ## Features
 
 ### Kernel and Core Systems
 
-- Custom 64-bit kernel written in C++ and Assembly
-- Boot process powered by the Limine bootloader
-- Physical Memory Management (PMM) with page-frame allocation
-- Interrupt handling through GDT, IDT, and ISR structures
-- PIC configuration and low-level port I/O support
+- Custom 64-bit kernel written in C++ and x86_64 Assembly
+- Limine bootloader integration
+- Physical Memory Management (PMM)
+- Early virtual memory support
+- Interrupt handling with GDT, IDT, and ISR infrastructure
+- PIC setup and direct port I/O access
 
-### Hardware Drivers
+### Desktop Environment
 
-- PS/2 keyboard driver with scancode handling
-- PS/2 mouse driver with basic cursor support
-
-### Graphics and GUI
-
-- VESA-compatible framebuffer renderer
-- Double buffering to reduce screen tearing
+- Framebuffer-based graphical desktop
 - Custom event-driven window manager
-- Draggable windows, menu bar, and dock interface
-- Basic desktop environment
+- Draggable window system with active and inactive title states
+- Boot screen animation and themed desktop visuals
+- Dark-mode aware interface behavior
 
-### System Components
+### Built-In Applications
 
-- Minimal terminal interface
-- Settings module for runtime adjustments such as background color
-- Temporary asset pipeline that parses PNG files at build time and embeds them into the kernel
+- Terminal
+- Calculator
+- Paint
+- Clock
+- Settings
+- Notepad
+- System Info
+- Snake
+- Minesweeper
+- Files
+
+### Input and Interaction
+
+- PS/2 keyboard driver
+- PS/2 mouse driver
+- Desktop-integrated shell command handling
 
 ## Build and Run
 
 ### Requirements
 
 - `x86_64-elf-gcc` cross compiler
-- `make` or `gmake`
+- `gmake`
 - `qemu-system-x86_64`
-- `python`
+- `xorriso`
+- `curl`
+- `git`
 
 ### Build
 
 ```bash
-make
+cd op_sys
+gmake
 ```
 
 ### Run
 
 ```bash
-make run
+cd op_sys
+gmake run
 ```
+
+### Output
+
+The build produces:
+
+- `op_sys/elevn32.iso`
 
 ## Project Goals
 
-- Understand low-level operating system architecture and design
-- Gain practical experience with memory management and interrupts
-- Explore direct hardware-software interaction on bare metal
-- Build a fully custom graphical environment from scratch
+- Understand low-level operating system architecture in practice
+- Gain hands-on experience with memory, interrupts, and hardware interfaces
+- Explore how a graphical desktop can be built directly on bare metal
+- Grow the project toward a more complete multitasking operating system
 
 ## Future Work
 
 - Filesystem implementation
-- Process and multitasking improvements
-- Further virtual memory development
+- More mature process and multitasking systems
+- Expanded virtual memory support
 - User-space applications
-- USB and storage driver support
+- USB and storage drivers
 - Networking stack
 
 ## Notes
 
-This project is educational and experimental. It is not intended for production use, but as a practical deep dive into operating system internals and low-level programming.
+This project is educational and experimental. It is not intended for production use; it is a learning-focused operating system project built to explore system internals from the ground up.
 
 ## Contributing
 
