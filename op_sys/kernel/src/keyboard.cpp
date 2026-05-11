@@ -28,9 +28,31 @@ static char buffer[BUFFER_SIZE];
 static volatile int buf_head = 0;
 static volatile int buf_tail = 0;
 static bool shift_pressed = false;
+static bool ctrl_pressed = false;
+static bool alt_pressed = false;
+static bool extended = false;
+static volatile SpecialKey special_key = KEY_NONE;
 
 static uint64_t callback(InterruptFrame *frame) {
     uint8_t scancode = inb(0x60);
+
+    if (scancode == 0xE0) {
+        extended = true;
+        return (uint64_t)frame;
+    }
+
+    if (extended) {
+        bool release = scancode & 0x80;
+        uint8_t code = scancode & 0x7F;
+        extended = false;
+        if (release) return (uint64_t)frame;
+        if (code == 0x48) special_key = KEY_UP;
+        else if (code == 0x50) special_key = KEY_DOWN;
+        else if (code == 0x4B) special_key = KEY_LEFT;
+        else if (code == 0x4D) special_key = KEY_RIGHT;
+        else if (code == 0x53) special_key = KEY_DELETE;
+        return (uint64_t)frame;
+    }
 
     if (scancode == 0x2A || scancode == 0x36) {
         shift_pressed = true;
@@ -40,8 +62,49 @@ static uint64_t callback(InterruptFrame *frame) {
         shift_pressed = false;
         return (uint64_t)frame;
     }
+    if (scancode == 0x1D) {
+        ctrl_pressed = true;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x9D) {
+        ctrl_pressed = false;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x38) {
+        alt_pressed = true;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0xB8) {
+        alt_pressed = false;
+        return (uint64_t)frame;
+    }
 
     if (scancode & 0x80) return (uint64_t)frame;
+
+    if (scancode == 0x01) {
+        special_key = KEY_ESCAPE;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x48) {
+        special_key = KEY_UP;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x50) {
+        special_key = KEY_DOWN;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x4B) {
+        special_key = KEY_LEFT;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x4D) {
+        special_key = KEY_RIGHT;
+        return (uint64_t)frame;
+    }
+    if (scancode == 0x53) {
+        special_key = KEY_DELETE;
+        return (uint64_t)frame;
+    }
 
     if (scancode < sizeof(scancode_ascii)) {
         char c = shift_pressed ? scancode_shift[scancode] : scancode_ascii[scancode];
@@ -68,6 +131,20 @@ void init() {
 
 bool has_input() {
     return buf_head != buf_tail;
+}
+
+SpecialKey get_special_key() {
+    SpecialKey key = special_key;
+    special_key = KEY_NONE;
+    return key;
+}
+
+bool ctrl_down() {
+    return ctrl_pressed;
+}
+
+bool alt_down() {
+    return alt_pressed;
 }
 
 char get_char() {

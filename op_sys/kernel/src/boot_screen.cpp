@@ -30,7 +30,7 @@ void play_animation() {
     graphics::draw_rect(bar_x, bar_y, bar_w, bar_h, graphics::COL_WHITE); // White border
     fb::swap_buffers();
     
-    uint32_t bar_color = graphics::current_desktop_color; // Use the dynamic theme color
+    uint32_t bar_color = 0x6B4FA3; // Lighter purple from the desktop palette
 
     // Bouncing block animation
     int block_w = 40;

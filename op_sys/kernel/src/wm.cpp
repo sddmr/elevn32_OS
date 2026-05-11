@@ -38,8 +38,12 @@ static int sh_count = 0;
 static char sh_lines[25][64];
 static char sh_in[64];
 static int sh_ptr = 0;
+static char sh_hist[8][64];
+static int sh_hist_count = 0;
+static int sh_hist_pos = -1;
 static char notepad[1024];
 static int note_len = 0;
+static int note_cursor = 0;
 static int sx[100], sy[100], slen = 3, sdir = 1, fx = 10, fy = 10;
 static bool s_dead = false;
 static uint64_t last_s_move = 0;
@@ -52,7 +56,7 @@ static bool mine_first_click = true;
 
 // Calculator state
 static char calc_display[20] = "0";
-static int64_t calc_a = 0, calc_b = 0;
+static int64_t calc_a = 0;
 static char calc_op = 0;
 static bool calc_new = true;
 
@@ -60,15 +64,30 @@ static bool calc_new = true;
 static uint32_t paint_color = 0x000000;
 static bool paint_inited = false;
 
-static int drag_win = -1, drag_off_x = 0, drag_off_y = 0, drag_target_x = 0,
-           drag_target_y = 0;
+static int drag_win = -1, drag_off_x = 0, drag_off_y = 0;
+static int resize_win = -1, resize_start_x = 0, resize_start_y = 0,
+           resize_start_w = 0, resize_start_h = 0;
 static bool start_open = false;
+static char start_search[32];
+static int start_search_len = 0;
+static int selected_icon = -1;
+static int selected_file = -1;
+static int last_icon = -1;
+static uint64_t last_icon_tick = 0;
+static int ctx_type = 0, ctx_x = 0, ctx_y = 0, ctx_file = -1;
+static char dialog_title[32], dialog_msg[96];
+static bool dialog_open = false;
+static char file_history[8][256];
+static int file_hist_count = 0;
+static int file_hist_pos = -1;
 
 static Rect dirty_rects[64];
 static int num_dirty = 0;
 static bool full_dirty = true;
 static bool scene_dirty = true;
 static uint64_t last_sc = 0;
+
+void bring_to_front(int idx);
 
 void mark_full() {
   full_dirty = true;
@@ -107,6 +126,102 @@ static void draw_btn(int x, int y, int w, int h, const char *t) {
   g::draw_raised(x, y, w, h);
   fb::draw_string(x + (w - (int)strlen(t) * 8) / 2, y + (h - 16) / 2, t,
                   g::COL_BLACK, g::COL_GRAY);
+}
+static bool contains(const char *text, const char *needle) {
+  if (!needle[0])
+    return true;
+  for (int i = 0; text[i]; i++) {
+    int j = 0;
+    while (text[i + j] && needle[j] && text[i + j] == needle[j])
+      j++;
+    if (!needle[j])
+      return true;
+  }
+  return false;
+}
+static void notify(const char *msg) {
+  (void)msg;
+}
+static void open_dialog(const char *title, const char *msg) {
+  strncpy(dialog_title, title, 31);
+  dialog_title[31] = 0;
+  strncpy(dialog_msg, msg, 95);
+  dialog_msg[95] = 0;
+  dialog_open = true;
+  mark_full();
+}
+static void file_push_history() {
+  if (file_hist_pos >= 0 && strcmp(file_history[file_hist_pos], fs::getcwd()) == 0)
+    return;
+  if (file_hist_count < 8) {
+    file_hist_pos = file_hist_count++;
+  } else {
+    for (int i = 0; i < 7; i++)
+      strcpy(file_history[i], file_history[i + 1]);
+    file_hist_pos = 7;
+  }
+  strcpy(file_history[file_hist_pos], fs::getcwd());
+}
+static void file_chdir_track(const char *path) {
+  if (fs::chdir(path)) {
+    file_push_history();
+    selected_file = -1;
+    notify("Folder opened");
+  } else {
+    open_dialog("Files", "Folder not found");
+  }
+}
+static void file_go_up() {
+  file_chdir_track("..");
+}
+static void file_go_back() {
+  if (file_hist_pos > 0) {
+    file_hist_pos--;
+    fs::chdir(file_history[file_hist_pos]);
+    selected_file = -1;
+    notify("Back");
+  }
+}
+static void open_app(int idx) {
+  if (idx < 0 || idx >= NUM_WIN)
+    return;
+  windows[idx].active = true;
+  windows[idx].minimized = false;
+  bring_to_front(idx);
+  selected_icon = idx;
+  notify(windows[idx].title);
+}
+static void sh_add_line(const char *line) {
+  if (sh_count < 18)
+    strcpy(sh_lines[sh_count++], line);
+  else {
+    for (int i = 0; i < 17; i++)
+      strcpy(sh_lines[i], sh_lines[i + 1]);
+    strcpy(sh_lines[17], line);
+  }
+}
+static void sh_insert_char(char c) {
+  int len = strlen(sh_in);
+  if (len >= 63)
+    return;
+  for (int i = len; i >= sh_ptr; i--)
+    sh_in[i + 1] = sh_in[i];
+  sh_in[sh_ptr++] = c;
+}
+static void note_insert_char(char c) {
+  if (note_len >= 1022)
+    return;
+  for (int i = note_len; i >= note_cursor; i--)
+    notepad[i + 1] = notepad[i];
+  notepad[note_cursor++] = c;
+  note_len++;
+}
+static void note_delete_at_cursor() {
+  if (note_cursor >= note_len)
+    return;
+  for (int i = note_cursor; i < note_len; i++)
+    notepad[i] = notepad[i + 1];
+  note_len--;
 }
 static void fill_circ(int cx, int cy, int r, uint32_t c) {
   for (int dy = -r; dy <= r; dy++)
@@ -283,7 +398,12 @@ static void draw_window(Window &w, int id) {
     g::draw_sunken(ax, ay, aw, ah);
     fb::fill_rect(ax + 1, ay + 1, aw - 2, ah - 2, g::COL_WHITE);
     int tx = ax + 8, ty = ay + 8;
+    int cxr = tx, cyr = ty;
     for (int i = 0; i < note_len; i++) {
+      if (i == note_cursor) {
+        cxr = tx;
+        cyr = ty;
+      }
       if (ty + 14 >= ay + ah - 30)
         break;
       if (notepad[i] == '\n') {
@@ -303,8 +423,12 @@ static void draw_window(Window &w, int id) {
         tx += 8;
       }
     }
+    if (note_cursor == note_len) {
+      cxr = tx;
+      cyr = ty;
+    }
     if (ty + 14 < ay + ah - 24 && (timer::get_ticks() / 500) % 2 == 0)
-      fb::fill_rect(tx, ty, 2, 14, g::COL_BLACK);
+      fb::fill_rect(cxr, cyr, 2, 14, g::COL_BLACK);
     draw_btn(ax + 2, ay + ah - 24, 60, 20, "Save");
     draw_btn(ax + 64, ay + ah - 24, 60, 20, "Load");
   } else if (id == 6) { // System Info
@@ -388,10 +512,23 @@ static void draw_window(Window &w, int id) {
     fb::fill_rect(ax + 1, ay + 1, aw - 2, ah - 2, g::COL_WHITE);
     fb::fill_rect(ax + 1, ay + 1, 120, ah - 2, 0xEAEAEA); // Left panel
     fb::draw_string(ax + 10, ay + 10, "C: Disk", g::COL_BLACK, 0xEAEAEA);
+    draw_btn(ax + 128, ay + 6, 42, 22, "Back");
+    draw_btn(ax + 174, ay + 6, 28, 22, "Up");
+    fb::fill_rect(ax + 208, ay + 6, aw - 216, 22, 0xF7F7F7);
+    g::draw_sunken(ax + 208, ay + 6, aw - 216, 22);
+    fb::draw_string(ax + 214, ay + 10, fs::getcwd(), g::COL_TITLEBAR,
+                    0xF7F7F7);
     int fcount = fs::get_file_count();
     for (int j = 0; j < fcount; j++) {
-      fb::draw_string(ax + 130, ay + 10 + j * 20, fs::get_file_name(j),
-                      g::COL_BLACK, g::COL_WHITE);
+      uint32_t color = fs::get_file_is_dir(j) ? g::COL_TITLEBAR : g::COL_BLACK;
+      int row_y = ay + 38 + j * 22;
+      if (j == selected_file)
+        fb::fill_rect(ax + 126, row_y - 2, aw - 134, 20, 0xB8D7FF);
+      fb::fill_rect(ax + 132, row_y + 1, 12, 10,
+                    fs::get_file_is_dir(j) ? 0xFFA500 : 0xFFFFFF);
+      g::draw_sunken(ax + 132, row_y + 1, 12, 10);
+      fb::draw_string(ax + 152, row_y, fs::get_file_name(j), color,
+                      g::COL_WHITE);
     }
   }
 }
@@ -457,6 +594,10 @@ void draw_scene(int mx, int my) {
                             0xFFFFFF, 0x0000AA, 0x00AA00, 0x666666, 0xEEEE00};
   for (int i = 0; i < 10; i++) {
     int cx = 40, cy = 20 + i * 70;
+    if (i == selected_icon) {
+      fb::fill_rect(cx - 6, cy - 4, 44, 56, 0x3A6EA5);
+      g::draw_sunken(cx - 6, cy - 4, 44, 56);
+    }
     fb::fill_rect(cx, cy, 32, 32, icon_colors[i]);
     g::draw_raised(cx, cy, 32, 32);
     if (i == 0) {
@@ -491,7 +632,7 @@ void draw_scene(int mx, int my) {
     }
     int tl = strlen(icon_names[i]) * 8;
     fb::draw_string(cx + 16 - (tl / 2), cy + 36, icon_names[i], 0xFFFFFF,
-                    g::current_desktop_color);
+                    i == selected_icon ? 0x3A6EA5 : g::current_desktop_color);
   }
   for (int i = 0; i < NUM_WIN; i++) {
     Window &w = windows[win_order[i]];
@@ -529,9 +670,14 @@ void draw_scene(int mx, int my) {
                         "Note", "Info", "Snake", "Mine",  "Files"};
     for (int i = 0; i < NUM_WIN; i++)
       if (windows[i].active) {
+        bool active_task = win_order[NUM_WIN - 1] == i && !windows[i].minimized;
         fb::fill_rect(bx, tby + 3, 54, 24, g::COL_GRAY);
+        if (active_task)
+          fb::fill_rect(bx + 2, tby + 5, 50, 20, g::COL_TITLEBAR);
         g::draw_sunken(bx, tby + 3, 54, 24);
-        fb::draw_string(bx + 4, tby + 7, nm[i], g::COL_BLACK, g::COL_GRAY);
+        fb::draw_string(bx + 4, tby + 7, nm[i],
+                        active_task ? 0xFFFFFF : g::COL_BLACK,
+                        active_task ? g::COL_TITLEBAR : g::COL_GRAY);
         bx += 58;
       }
     int h, m, s;
@@ -547,28 +693,65 @@ void draw_scene(int mx, int my) {
     fb::draw_string(1175, tby + 7, "Time:", g::COL_BLACK, g::COL_GRAY);
     fb::draw_string(1220, tby + 7, tc, g::COL_BLACK, g::COL_GRAY);
     if (start_open) {
-      int sx2 = 2, sy2 = tby - 235;
-      fb::fill_rect(sx2, sy2, 150, 235, g::COL_GRAY);
-      g::draw_raised(sx2, sy2, 150, 235);
+      int sx2 = 2, sy2 = tby - 260;
+      fb::fill_rect(sx2, sy2, 170, 260, g::COL_GRAY);
+      g::draw_raised(sx2, sy2, 170, 260);
+      fb::fill_rect(sx2 + 8, sy2 + 8, 154, 22, g::COL_WHITE);
+      g::draw_sunken(sx2 + 8, sy2 + 8, 154, 22);
+      fb::draw_string(sx2 + 12, sy2 + 12, start_search, g::COL_BLACK,
+                      g::COL_WHITE);
       const char *si[] = {"Terminal",      "Calculator", "Paint",
                           "Clock",         "Settings",   "Notepad",
                           "System Info",   "Snake Game", "Minesweeper",
                           "File Explorer", "Logout"};
       for (int i = 0; i < 11; i++) {
-        int iy = sy2 + 4 + i * 21;
+        if (!contains(si[i], start_search))
+          continue;
+        int iy = sy2 + 36 + i * 19;
         bool h =
-            (mx >= sx2 + 2 && mx <= sx2 + 148 && my >= iy && my <= iy + 19);
+            (mx >= sx2 + 2 && mx <= sx2 + 168 && my >= iy && my <= iy + 17);
         if (h)
-          fb::fill_rect(sx2 + 2, iy, 146, 19, g::COL_TITLEBAR);
+          fb::fill_rect(sx2 + 2, iy, 166, 17, g::COL_TITLEBAR);
         fb::draw_string(sx2 + 8, iy + 2, si[i], h ? g::COL_WHITE : g::COL_BLACK,
                         h ? g::COL_TITLEBAR : g::COL_GRAY);
       }
     }
   }
+  if (ctx_type) {
+    const char *items_desktop[] = {"New Folder", "New File", "Refresh",
+                                   "Settings"};
+    const char *items_file[] = {"Open", "Rename", "Delete", "Properties"};
+    const char **items = ctx_type == 1 ? items_desktop : items_file;
+    fb::fill_rect(ctx_x, ctx_y, 120, 86, g::COL_GRAY);
+    g::draw_raised(ctx_x, ctx_y, 120, 86);
+    for (int i = 0; i < 4; i++) {
+      int iy = ctx_y + 4 + i * 20;
+      bool h = mx >= ctx_x && mx <= ctx_x + 120 && my >= iy && my <= iy + 18;
+      if (h)
+        fb::fill_rect(ctx_x + 2, iy, 116, 18, g::COL_TITLEBAR);
+      fb::draw_string(ctx_x + 8, iy + 2, items[i],
+                      h ? 0xFFFFFF : g::COL_BLACK,
+                      h ? g::COL_TITLEBAR : g::COL_GRAY);
+    }
+  }
+  if (dialog_open) {
+    int dx = 430, dy = 290;
+    fb::fill_rect(dx, dy, 420, 160, g::COL_GRAY);
+    g::draw_raised(dx, dy, 420, 160);
+    fb::fill_rect(dx + 3, dy + 3, 414, 24, g::COL_TITLEBAR);
+    fb::draw_string(dx + 12, dy + 7, dialog_title, 0xFFFFFF, g::COL_TITLEBAR);
+    fb::draw_string(dx + 20, dy + 58, dialog_msg, g::COL_BLACK, g::COL_GRAY);
+    draw_btn(dx + 170, dy + 116, 80, 26, "OK");
+  }
 }
 
 void init() {
   fs::init();
+  file_push_history();
+  start_search[0] = 0;
+  start_search_len = 0;
+  selected_icon = -1;
+  selected_file = -1;
   for (int i = 0; i < NUM_WIN; i++) {
     windows[i].active = false;
     windows[i].minimized = false;
@@ -607,11 +790,68 @@ void init() {
 
 void run() {
   static bool prev_left = false;
+  static bool prev_right = false;
   static int pmx = 0, pmy = 0;
   while (true) {
     char c = 0;
     if (keyboard::has_input())
       c = keyboard::get_char();
+    keyboard::SpecialKey sk = keyboard::get_special_key();
+    if (current_state == STATE_DESKTOP && sk != keyboard::KEY_NONE) {
+      if (sk == keyboard::KEY_ESCAPE) {
+        start_open = false;
+        ctx_type = 0;
+        dialog_open = false;
+        mark_full();
+      } else if (keyboard::alt_down() && sk == keyboard::KEY_RIGHT) {
+        for (int s = 1; s <= NUM_WIN; s++) {
+          int idx = (win_order[NUM_WIN - 1] + s) % NUM_WIN;
+          if (windows[idx].active && !windows[idx].minimized) {
+            bring_to_front(idx);
+            break;
+          }
+        }
+      } else {
+        int tw = win_order[NUM_WIN - 1];
+        if (tw == 0 && windows[0].active) {
+          int len = strlen(sh_in);
+          if (sk == keyboard::KEY_LEFT && sh_ptr > 0)
+            sh_ptr--;
+          else if (sk == keyboard::KEY_RIGHT && sh_ptr < len)
+            sh_ptr++;
+          else if (sk == keyboard::KEY_UP && sh_hist_count > 0) {
+            if (sh_hist_pos < 0)
+              sh_hist_pos = sh_hist_count - 1;
+            else if (sh_hist_pos > 0)
+              sh_hist_pos--;
+            strcpy(sh_in, sh_hist[sh_hist_pos]);
+            sh_ptr = strlen(sh_in);
+          } else if (sk == keyboard::KEY_DOWN && sh_hist_count > 0) {
+            if (sh_hist_pos >= 0 && sh_hist_pos < sh_hist_count - 1) {
+              sh_hist_pos++;
+              strcpy(sh_in, sh_hist[sh_hist_pos]);
+              sh_ptr = strlen(sh_in);
+            } else {
+              sh_hist_pos = -1;
+              sh_in[0] = 0;
+              sh_ptr = 0;
+            }
+          } else if (sk == keyboard::KEY_DELETE && sh_ptr < len) {
+            for (int i = sh_ptr; i < len; i++)
+              sh_in[i] = sh_in[i + 1];
+          }
+          add_dirty(windows[0].x, windows[0].y, windows[0].w, windows[0].h);
+        } else if (tw == 5 && windows[5].active) {
+          if (sk == keyboard::KEY_LEFT && note_cursor > 0)
+            note_cursor--;
+          else if (sk == keyboard::KEY_RIGHT && note_cursor < note_len)
+            note_cursor++;
+          else if (sk == keyboard::KEY_DELETE)
+            note_delete_at_cursor();
+          add_dirty(windows[5].x, windows[5].y, windows[5].w, windows[5].h);
+        }
+      }
+    }
     if (c) {
       if (current_state == STATE_LOGIN) {
         if (c == '\t') {
@@ -645,36 +885,99 @@ void run() {
         }
         mark_full();
       } else {
+        if (keyboard::alt_down() && c == '\t') {
+          for (int p = NUM_WIN - 2; p >= 0; p--) {
+            int idx = win_order[p];
+            if (windows[idx].active && !windows[idx].minimized) {
+              bring_to_front(idx);
+              break;
+            }
+          }
+          mark_full();
+          continue;
+        }
+        if (start_open) {
+          if (c == '\b') {
+            if (start_search_len > 0)
+              start_search[--start_search_len] = 0;
+          } else if (c == '\n') {
+            const char *si[] = {"Terminal",      "Calculator", "Paint",
+                                "Clock",         "Settings",   "Notepad",
+                                "System Info",   "Snake Game", "Minesweeper",
+                                "File Explorer", "Logout"};
+            for (int i = 0; i < 11; i++)
+              if (contains(si[i], start_search)) {
+                if (i == 10)
+                  current_state = STATE_LOGIN;
+                else
+                  open_app(i);
+                break;
+              }
+            start_open = false;
+            start_search[0] = 0;
+            start_search_len = 0;
+          } else if (start_search_len < 31 && c >= 32) {
+            start_search[start_search_len++] = c;
+            start_search[start_search_len] = 0;
+          }
+          mark_full();
+          continue;
+        }
+        if (keyboard::ctrl_down() && c == 'l') {
+          start_open = true;
+          start_search[0] = 0;
+          start_search_len = 0;
+          mark_full();
+          continue;
+        }
+        if (keyboard::ctrl_down() && c == 'n') {
+          if (fs::mkdir("NewFolder"))
+            notify("Folder created");
+          else if (fs::touch("NewFile.txt"))
+            notify("File created");
+          else
+            open_dialog("Create", "Could not create item");
+          mark_full();
+          continue;
+        }
         int tw = win_order[NUM_WIN - 1];
         if (tw == 0 && windows[0].active) {
           if (c == '\b') {
-            if (sh_ptr > 0)
-              sh_in[--sh_ptr] = 0;
+            if (sh_ptr > 0) {
+              int len = strlen(sh_in);
+              for (int i = sh_ptr - 1; i < len; i++)
+                sh_in[i] = sh_in[i + 1];
+              sh_ptr--;
+            }
           } else if (c == '\n') {
             char prompt[80] = "~ % ";
             strcat(prompt, sh_in);
-            if (sh_count < 18)
-              strcpy(sh_lines[sh_count++], prompt);
-            else {
-              for (int i = 0; i < 17; i++)
-                strcpy(sh_lines[i], sh_lines[i + 1]);
-              strcpy(sh_lines[17], prompt);
+            sh_add_line(prompt);
+            if (strlen(sh_in) > 0) {
+              if (sh_hist_count < 8)
+                strcpy(sh_hist[sh_hist_count++], sh_in);
+              else {
+                for (int i = 0; i < 7; i++)
+                  strcpy(sh_hist[i], sh_hist[i + 1]);
+                strcpy(sh_hist[7], sh_in);
+              }
             }
+            sh_hist_pos = -1;
             shell::process_command_wm(sh_in, sh_lines, &sh_count);
             sh_in[0] = 0;
             sh_ptr = 0;
-          } else if (sh_ptr < 63) {
-            sh_in[sh_ptr++] = c;
-            sh_in[sh_ptr] = 0;
+          } else if (c >= 32) {
+            sh_insert_char(c);
           }
           add_dirty(windows[0].x, windows[0].y, windows[0].w, windows[0].h);
         } else if (tw == 5 && windows[5].active) {
           if (c == '\b') {
-            if (note_len > 0)
-              notepad[--note_len] = 0;
-          } else if (note_len < 1022) {
-            notepad[note_len++] = c;
-            notepad[note_len] = 0;
+            if (note_cursor > 0) {
+              note_cursor--;
+              note_delete_at_cursor();
+            }
+          } else {
+            note_insert_char(c);
           }
           add_dirty(windows[5].x, windows[5].y, windows[5].w, windows[5].h);
         } else if (tw == 7 && windows[7].active) {
@@ -716,7 +1019,9 @@ void run() {
     }
     int mx = mouse::get_x(), my = mouse::get_y();
     bool ml = mouse::is_left_clicked();
+    bool mr = mouse::is_right_clicked();
     bool clicked = (ml && !prev_left);
+    bool right_clicked = (mr && !prev_right);
     uint64_t now_ms = timer::get_ticks();
     if (current_state == STATE_DESKTOP && windows[7].active && !s_dead &&
         now_ms - last_s_move > 100) {
@@ -747,6 +1052,29 @@ void run() {
       }
       add_dirty(windows[7].x, windows[7].y, windows[7].w, windows[7].h);
     }
+    if (right_clicked && current_state == STATE_DESKTOP) {
+      ctx_type = 1;
+      ctx_x = mx;
+      ctx_y = my;
+      ctx_file = -1;
+      if (windows[9].active && !windows[9].minimized &&
+          mx >= windows[9].x && mx <= windows[9].x + windows[9].w &&
+          my >= windows[9].y && my <= windows[9].y + windows[9].h) {
+        Window &fw = windows[9];
+        int ax2 = fw.x + 4, ay2 = fw.y + 30;
+        int fcount = fs::get_file_count();
+        for (int j = 0; j < fcount; j++) {
+          if (mx >= ax2 + 126 && mx <= ax2 + fw.w - 12 &&
+              my >= ay2 + 38 + j * 22 && my <= ay2 + 58 + j * 22) {
+            ctx_type = 2;
+            ctx_file = j;
+            selected_file = j;
+            break;
+          }
+        }
+      }
+      mark_full();
+    }
     if (clicked) {
       if (current_state == STATE_LOGIN) {
         int lx = 1280 / 2 - 150, ly = 800 / 2 - 100;
@@ -767,23 +1095,97 @@ void run() {
         }
         mark_full();
       } else {
+        if (dialog_open) {
+          int dx = 430, dy = 290;
+          if (mx >= dx + 170 && mx <= dx + 250 && my >= dy + 116 &&
+              my <= dy + 142)
+            dialog_open = false;
+          mark_full();
+          prev_left = ml;
+          prev_right = mr;
+          continue;
+        }
+        if (ctx_type) {
+          if (mx >= ctx_x && mx <= ctx_x + 120 && my >= ctx_y &&
+              my <= ctx_y + 86) {
+            int item = (my - ctx_y - 4) / 20;
+            if (item >= 0 && item < 4) {
+              if (ctx_type == 1) {
+                if (item == 0) {
+                  if (fs::mkdir("NewFolder"))
+                    notify("Folder created");
+                  else
+                    open_dialog("New Folder", "Could not create folder");
+                } else if (item == 1) {
+                  if (fs::touch("NewFile.txt"))
+                    notify("File created");
+                  else
+                    open_dialog("New File", "Could not create file");
+                } else if (item == 2) {
+                  notify("Desktop refreshed");
+                } else if (item == 3) {
+                  open_app(4);
+                }
+              } else if (ctx_type == 2 && ctx_file >= 0) {
+                const char *fname = fs::get_file_name(ctx_file);
+                if (item == 0) {
+                  if (fs::get_file_is_dir(ctx_file))
+                    file_chdir_track(fname);
+                  else {
+                    int sz;
+                    fs::load_file(fname, notepad, &sz);
+                    note_len = sz;
+                    note_cursor = note_len;
+                    open_app(5);
+                  }
+                } else if (item == 1) {
+                  char nn[32] = "Renamed";
+                  if (!fs::get_file_is_dir(ctx_file))
+                    strcpy(nn, "Renamed.txt");
+                  if (fs::rename(fname, nn))
+                    notify("Item renamed");
+                  else
+                    open_dialog("Rename", "Could not rename item");
+                } else if (item == 2) {
+                  if (fs::remove(fname))
+                    notify("Item deleted");
+                  else
+                    open_dialog("Delete", "Folder must be empty");
+                } else if (item == 3) {
+                  open_dialog("Properties",
+                              fs::get_file_is_dir(ctx_file) ? "Type: folder"
+                                                            : "Type: file");
+                }
+              }
+            }
+          }
+          ctx_type = 0;
+          mark_full();
+          prev_left = ml;
+          prev_right = mr;
+          continue;
+        }
         int tby = 800 - 30;
         if (mx >= 2 && mx <= 62 && my >= tby + 3 && my <= tby + 27) {
           start_open = !start_open;
+          start_search[0] = 0;
+          start_search_len = 0;
           mark_full();
         } else if (start_open) {
-          int sx2 = 2, sy2 = tby - 235;
-          if (mx >= sx2 && mx <= sx2 + 150 && my >= sy2 && my <= sy2 + 235) {
+          int sx2 = 2, sy2 = tby - 260;
+          if (mx >= sx2 && mx <= sx2 + 170 && my >= sy2 && my <= sy2 + 260) {
             bool clicked_item = false;
+            const char *si[] = {"Terminal",      "Calculator", "Paint",
+                                "Clock",         "Settings",   "Notepad",
+                                "System Info",   "Snake Game", "Minesweeper",
+                                "File Explorer", "Logout"};
             for (int i = 0; i < 11; i++)
-              if (my >= sy2 + 4 + i * 21 && my <= sy2 + 4 + i * 21 + 19) {
+              if (contains(si[i], start_search) &&
+                  my >= sy2 + 36 + i * 19 && my <= sy2 + 36 + i * 19 + 17) {
                 if (i == 10)
                   current_state = STATE_LOGIN;
-                else {
-                  windows[i].active = true;
-                  windows[i].minimized = false;
-                  bring_to_front(i);
-                }
+                else
+                  open_app(i);
                 start_open = false;
                 mark_full();
                 clicked_item = true;
@@ -816,10 +1218,16 @@ void run() {
             for (int i = 0; i < 10; i++) {
               int cx = 40, cy = 20 + i * 70;
               if (mx >= cx && mx <= cx + 32 && my >= cy && my <= cy + 32) {
-                windows[i].active = true;
-                windows[i].minimized = false;
-                bring_to_front(i);
+                if (selected_icon == i && last_icon == i &&
+                    now_ms - last_icon_tick < 40) {
+                  open_app(i);
+                } else {
+                  selected_icon = i;
+                  last_icon = i;
+                  last_icon_tick = now_ms;
+                }
                 icon_clicked = true;
+                mark_full();
                 break;
               }
             }
@@ -862,6 +1270,14 @@ void run() {
                     drag_win = idx;
                     drag_off_x = mx - w.x;
                     drag_off_y = my - w.y;
+                  } else if (!w.maximized &&
+                             mx >= w.x + w.w - 10 && mx <= w.x + w.w &&
+                             my >= w.y + w.h - 10 && my <= w.y + w.h) {
+                    resize_win = idx;
+                    resize_start_x = mx;
+                    resize_start_y = my;
+                    resize_start_w = w.w;
+                    resize_start_h = w.h;
                   } else if (idx == 1) { // Calculator clicks
                     int ax = w.x + 4, ay = w.y + 24, aw = w.w - 8,
                         ah = w.h - 28;
@@ -933,6 +1349,7 @@ void run() {
                       if (mx >= ax2 + 10 + j * 38 && mx <= ax2 + 40 + j * 38 &&
                           my >= ay2 + 30 && my <= ay2 + 60) {
                         g::current_desktop_color = ccs[j];
+                        notify("Accent color changed");
                         mark_full();
                       }
                     if (mx >= ax2 + 8 && mx <= ax2 + 88 && my >= ay2 + 88 &&
@@ -941,6 +1358,7 @@ void run() {
                       g::COL_WHITE = 0xFFFFFF;
                       g::COL_BLACK = 0x000000;
                       g::is_dark_theme = false;
+                      notify("Light theme");
                       mark_full();
                     }
                     if (mx >= ax2 + 100 && mx <= ax2 + 180 && my >= ay2 + 88 &&
@@ -949,19 +1367,26 @@ void run() {
                       g::COL_WHITE = 0x1E1E1E;
                       g::COL_BLACK = 0xFFFFFF;
                       g::is_dark_theme = true;
+                      notify("Dark theme");
                       mark_full();
                     }
                   } else if (idx == 5) {
-                    int ax2 = w.x + 4, ay2 = w.y + 24, aw2 = w.w - 8,
-                        ah2 = w.h - 28;
+                    int ax2 = w.x + 4, ay2 = w.y + 24, ah2 = w.h - 28;
                     if (mx >= ax2 + 2 && mx <= ax2 + 62 &&
-                        my >= ay2 + ah2 - 24 && my <= ay2 + ah2 - 4)
+                        my >= ay2 + ah2 - 24 && my <= ay2 + ah2 - 4) {
                       fs::save_file("note.txt", notepad, note_len);
+                      notify("File saved");
+                    }
                     if (mx >= ax2 + 64 && mx <= ax2 + 124 &&
                         my >= ay2 + ah2 - 24 && my <= ay2 + ah2 - 4) {
                       int sz;
-                      fs::load_file("note.txt", notepad, &sz);
-                      note_len = sz;
+                      if (fs::load_file("note.txt", notepad, &sz)) {
+                        note_len = sz;
+                        note_cursor = note_len;
+                        notify("File loaded");
+                      } else {
+                        open_dialog("Notepad", "note.txt was not found");
+                      }
                     }
                   } else if (idx == 8) {
                     int ax2 = w.x + 4, ay2 = w.y + 24;
@@ -1019,18 +1444,40 @@ void run() {
                         }
                       }
                   } else if (idx == 9) {
-                    int ax2 = w.x + 4, ay2 = w.y + 24;
+                    int ax2 = w.x + 4, ay2 = w.y + 30;
+                    if (mx >= ax2 + 128 && mx <= ax2 + 170 &&
+                        my >= ay2 + 6 && my <= ay2 + 28) {
+                      file_go_back();
+                      mark_full();
+                      break;
+                    }
+                    if (mx >= ax2 + 174 && mx <= ax2 + 202 &&
+                        my >= ay2 + 6 && my <= ay2 + 28) {
+                      file_go_up();
+                      mark_full();
+                      break;
+                    }
                     int fcount = fs::get_file_count();
                     for (int j = 0; j < fcount; j++) {
-                      if (mx >= ax2 + 130 && mx <= ax2 + 300 &&
-                          my >= ay2 + 10 + j * 20 && my <= ay2 + 30 + j * 20) {
+                      if (mx >= ax2 + 126 && mx <= ax2 + w.w - 12 &&
+                          my >= ay2 + 38 + j * 22 && my <= ay2 + 58 + j * 22) {
                         const char *fname = fs::get_file_name(j);
-                        int sz;
-                        fs::load_file(fname, notepad, &sz);
-                        note_len = sz;
-                        windows[5].active = true;
-                        windows[5].minimized = false;
-                        bring_to_front(5);
+                        if (selected_file == j && last_icon == 100 + j &&
+                            now_ms - last_icon_tick < 40) {
+                          if (fs::get_file_is_dir(j)) {
+                            file_chdir_track(fname);
+                          } else {
+                            int sz;
+                            fs::load_file(fname, notepad, &sz);
+                            note_len = sz;
+                            note_cursor = note_len;
+                            open_app(5);
+                          }
+                        } else {
+                          selected_file = j;
+                          last_icon = 100 + j;
+                          last_icon_tick = now_ms;
+                        }
                         mark_full();
                         break;
                       }
@@ -1084,11 +1531,35 @@ void run() {
         add_dirty(nx, ny, windows[drag_win].w, windows[drag_win].h);
       }
     }
+    if (resize_win != -1) {
+      int nw = resize_start_w + (mx - resize_start_x);
+      int nh = resize_start_h + (my - resize_start_y);
+      if (nw < 180)
+        nw = 180;
+      if (nh < 120)
+        nh = 120;
+      if (windows[resize_win].x + nw > 1280)
+        nw = 1280 - windows[resize_win].x;
+      if (windows[resize_win].y + nh > 770)
+        nh = 770 - windows[resize_win].y;
+      if (nw != windows[resize_win].w || nh != windows[resize_win].h) {
+        add_dirty(windows[resize_win].x, windows[resize_win].y,
+                  windows[resize_win].w, windows[resize_win].h);
+        windows[resize_win].w = nw;
+        windows[resize_win].h = nh;
+        add_dirty(windows[resize_win].x, windows[resize_win].y, nw, nh);
+      }
+    }
     if (!ml && drag_win != -1) {
       drag_win = -1;
       mark_full();
     }
+    if (!ml && resize_win != -1) {
+      resize_win = -1;
+      mark_full();
+    }
     prev_left = ml;
+    prev_right = mr;
     uint64_t now = timer::get_ticks();
     if (scene_dirty && now - last_sc >= 16) {
       draw_scene(mx, my);
@@ -1107,7 +1578,7 @@ void run() {
       pmy = my;
     } else if (mx != pmx || my != pmy) {
       if (start_open)
-        add_dirty(2, 800 - 30 - 195, 150, 193);
+        add_dirty(2, 800 - 30 - 260, 170, 260);
       restore_cur();
       fb::swap_buffers_rect(csx, csy, 12, 18);
       save_cur(mx, my);

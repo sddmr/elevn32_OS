@@ -1,5 +1,6 @@
 #include "shell.h"
 #include "framebuffer.h"
+#include "fs.h"
 #include "keyboard.h"
 #include "string.h"
 
@@ -17,6 +18,12 @@ static void cmd_help() {
   fb::println("    clear    - Clear screen");
   fb::println("    info     - System information");
   fb::println("    mem      - Memory statistics");
+  fb::println("    ls       - List current directory");
+  fb::println("    pwd      - Print current directory");
+  fb::println("    cd       - Change directory");
+  fb::println("    mkdir    - Create directory");
+  fb::println("    touch    - Create empty file");
+  fb::println("    cat      - Print file contents");
   fb::println("    echo     - Print text");
   fb::println("    color    - Change text color");
   fb::println("    uptime   - Show system uptime");
@@ -73,6 +80,74 @@ static void cmd_echo(const char *args) {
   fb::set_color(0xFFFFFF, 0x000000);
   fb::print("  ");
   fb::println(args);
+}
+
+static void cmd_ls() {
+  int count = fs::get_file_count();
+  fb::set_color(0xFFFFFF, 0x000000);
+  if (count == 0) {
+    fb::println("  <empty>");
+    return;
+  }
+  for (int i = 0; i < count; i++) {
+    fb::print("  ");
+    fb::println(fs::get_file_name(i));
+  }
+}
+
+static void cmd_pwd() {
+  fb::set_color(0xFFFFFF, 0x000000);
+  fb::print("  ");
+  fb::println(fs::getcwd());
+}
+
+static void cmd_cd(const char *args) {
+  const char *target = strlen(args) == 0 ? "/" : args;
+  if (!fs::chdir(target)) {
+    fb::set_color(0xFF4444, 0x000000);
+    fb::print("  [NO] ");
+    fb::set_color(0xFFFFFF, 0x000000);
+    fb::println("Directory not found");
+  }
+}
+
+static void cmd_mkdir(const char *args) {
+  if (strlen(args) == 0 || !fs::mkdir(args)) {
+    fb::set_color(0xFF4444, 0x000000);
+    fb::print("  [NO] ");
+    fb::set_color(0xFFFFFF, 0x000000);
+    fb::println("Could not create directory");
+    return;
+  }
+  fb::set_color(0x00FF88, 0x000000);
+  fb::println("  Directory created");
+}
+
+static void cmd_touch(const char *args) {
+  if (strlen(args) == 0 || !fs::touch(args)) {
+    fb::set_color(0xFF4444, 0x000000);
+    fb::print("  [NO] ");
+    fb::set_color(0xFFFFFF, 0x000000);
+    fb::println("Could not create file");
+    return;
+  }
+  fb::set_color(0x00FF88, 0x000000);
+  fb::println("  File ready");
+}
+
+static void cmd_cat(const char *args) {
+  char content[1025];
+  int size = 0;
+  if (strlen(args) == 0 || !fs::load_file(args, content, &size)) {
+    fb::set_color(0xFF4444, 0x000000);
+    fb::print("  [NO] ");
+    fb::set_color(0xFFFFFF, 0x000000);
+    fb::println("File not found");
+    return;
+  }
+  fb::set_color(0xFFFFFF, 0x000000);
+  fb::print("  ");
+  fb::println(content);
 }
 
 static void cmd_color(const char *args) {
@@ -148,6 +223,18 @@ static void process_command(char *input) {
     cmd_info();
   else if (strcmp(cmd, "mem") == 0)
     cmd_mem();
+  else if (strcmp(cmd, "ls") == 0)
+    cmd_ls();
+  else if (strcmp(cmd, "pwd") == 0)
+    cmd_pwd();
+  else if (strcmp(cmd, "cd") == 0)
+    cmd_cd(args);
+  else if (strcmp(cmd, "mkdir") == 0)
+    cmd_mkdir(args);
+  else if (strcmp(cmd, "touch") == 0)
+    cmd_touch(args);
+  else if (strcmp(cmd, "cat") == 0)
+    cmd_cat(args);
   else if (strcmp(cmd, "uptime") == 0)
     cmd_uptime();
   else if (strcmp(cmd, "echo") == 0)
@@ -227,6 +314,7 @@ void process_command_wm(const char *input, char buf[][64], int *count) {
 
   if (strcmp(cmd, "help") == 0) {
     wm_push(buf, count, "Commands: help clear info mem uptime echo reboot");
+    wm_push(buf, count, "          ls pwd cd mkdir touch cat");
   } else if (strcmp(cmd, "clear") == 0) {
     *count = 0;
   } else if (strcmp(cmd, "info") == 0) {
@@ -254,6 +342,39 @@ void process_command_wm(const char *input, char buf[][64], int *count) {
     wm_push(buf, count, line);
   } else if (strcmp(cmd, "echo") == 0) {
     wm_push(buf, count, args);
+  } else if (strcmp(cmd, "ls") == 0) {
+    int fcount = fs::get_file_count();
+    if (fcount == 0) {
+      wm_push(buf, count, "<empty>");
+    } else {
+      for (int j = 0; j < fcount; j++) {
+        const char *name = fs::get_file_name(j);
+        if (name) wm_push(buf, count, name);
+      }
+    }
+  } else if (strcmp(cmd, "pwd") == 0) {
+    wm_push(buf, count, fs::getcwd());
+  } else if (strcmp(cmd, "cd") == 0) {
+    const char *target = strlen(args) == 0 ? "/" : args;
+    if (!fs::chdir(target))
+      wm_push(buf, count, "cd: directory not found");
+  } else if (strcmp(cmd, "mkdir") == 0) {
+    if (strlen(args) == 0 || !fs::mkdir(args))
+      wm_push(buf, count, "mkdir: could not create directory");
+    else
+      wm_push(buf, count, "directory created");
+  } else if (strcmp(cmd, "touch") == 0) {
+    if (strlen(args) == 0 || !fs::touch(args))
+      wm_push(buf, count, "touch: could not create file");
+    else
+      wm_push(buf, count, "file ready");
+  } else if (strcmp(cmd, "cat") == 0) {
+    char content[1025];
+    int size = 0;
+    if (strlen(args) == 0 || !fs::load_file(args, content, &size))
+      wm_push(buf, count, "cat: file not found");
+    else
+      wm_push(buf, count, content);
   } else if (strcmp(cmd, "reboot") == 0) {
     wm_push(buf, count, "Rebooting...");
     uint8_t good = 0x02;
