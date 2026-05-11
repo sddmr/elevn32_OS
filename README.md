@@ -1,6 +1,6 @@
 # elevn32 OS
 
-**Current Version:** `v1.1.1`
+**Current Version:** `v1.1.2`
 
 elevn32 OS is a 64-bit bare-metal operating system written from scratch in C++ and x86_64 Assembly. It is built as a practical exploration of low-level architecture, memory management, hardware interaction, and desktop environment design without relying on an existing operating system stack.
 
@@ -9,10 +9,13 @@ elevn32 OS is a 64-bit bare-metal operating system written from scratch in C++ a
 - Custom x86_64 kernel with manual low-level subsystem development
 - Limine-based boot flow and ISO image generation
 - Physical and virtual memory groundwork for more advanced kernel features
+- In-memory filesystem with directory and file navigation support
 - Custom framebuffer-based desktop environment and window manager
 - Built-in desktop apps including Terminal, Calculator, Paint, Clock, Notepad, Snake, Minesweeper, System Info, Files, and Settings
 - Interactive shell support both in the boot console and inside the desktop terminal window
+- Shell commands such as `ls`, `pwd`, `cd`, `mkdir`, `touch`, and `cat`
 - Theme-aware desktop styling with configurable colors and dark-mode support
+- Improved desktop interaction including file browsing, window resizing, and richer keyboard input handling
 
 ## Default Login
 
@@ -33,6 +36,7 @@ The current system is designed to run inside QEMU and is built with a dedicated 
 - Limine bootloader integration
 - Physical Memory Management (PMM)
 - Early virtual memory support
+- In-memory filesystem with files, directories, path resolution, and current working directory support
 - Interrupt handling with GDT, IDT, and ISR infrastructure
 - PIC setup and direct port I/O access
 
@@ -41,8 +45,10 @@ The current system is designed to run inside QEMU and is built with a dedicated 
 - Framebuffer-based graphical desktop
 - Custom event-driven window manager
 - Draggable window system with active and inactive title states
+- Window resizing support
 - Boot screen animation and themed desktop visuals
 - Dark-mode aware interface behavior
+- File explorer navigation with back and up actions
 
 ### Built-In Applications
 
@@ -62,6 +68,13 @@ The current system is designed to run inside QEMU and is built with a dedicated 
 - PS/2 keyboard driver
 - PS/2 mouse driver
 - Desktop-integrated shell command handling
+- Special key handling for arrows, delete, and escape
+- Basic command history and richer text editing behavior inside desktop apps
+
+### Shell and Filesystem Commands
+
+- `help`, `clear`, `info`, `mem`, `uptime`, `echo`, `color`, `reboot`
+- `ls`, `pwd`, `cd`, `mkdir`, `touch`, `cat`
 
 ## Build and Run
 
@@ -103,10 +116,10 @@ The build produces:
 
 ## Future Work
 
-- Filesystem implementation
 - More mature process and multitasking systems
 - Expanded virtual memory support
 - User-space applications
+- Persistent storage beyond the current in-memory filesystem
 - USB and storage drivers
 - Networking stack
 
